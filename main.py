@@ -1,60 +1,63 @@
 """
-Reel Riot MVP  —  versión sin MoviePy
-✓ Baja el meme top del día en Reddit
-✓ Lo sube a tu Instagram
-✓ Si Instagram pide verificación (challenge), usa el código guardado
+Reel Riot MVP — main.py definitivo
+Versión mínima viable (sin MoviePy) con sesión persistente de Instagram.
+
+Flujo:
+1. Toma el top-day de 3 subreddits.
+2. Descarga la imagen o vídeo.
+3. Carga la sesión guardada en el secret IG_SESSION para evitar retos.
+4. Publica el meme en tu cuenta de Instagram.
 """
 
-import os, tempfile, praw, requests
+import os
+import json
+import tempfile
+import requests
+import praw
 from instagrapi import Client
-from instagrapi.exceptions import ChallengeRequired, ChallengeResolutionFailed
 
-# ───── 1) Credenciales desde secrets ───────────────────────────────────────
-IG_USER  = os.environ["IG_USERNAME"]
-IG_PASS  = os.environ["IG_PASSWORD"]
-REDDIT_ID  = os.environ["REDDIT_CLIENT_ID"]
-REDDIT_SEC = os.environ["REDDIT_SECRET"]
+# ───── 1. Credenciales desde secrets ───────────────────────────────────────
+IG_USER   = os.environ["IG_USERNAME"]        # tu usuario IG (sin @)
+IG_PASS   = os.environ["IG_PASSWORD"]        # tu contraseña IG
+REDDIT_ID = os.environ["REDDIT_CLIENT_ID"]   # client_id de la app Reddit
+REDDIT_SEC = os.environ["REDDIT_SECRET"]     # secret de la app Reddit
 
-# ───── 2) Conexión a Reddit ───────────────────────────────────────────────
+# ───── 2. Conexión a Reddit ───────────────────────────────────────────────
 reddit = praw.Reddit(
     client_id=REDDIT_ID,
     client_secret=REDDIT_SEC,
-    user_agent="reelriot_mvp/0.1 by reelriottv"   # ← tu usuario Reddit
+    user_agent="reelriot_mvp/0.1 by reelriottv"   # ← cambia si tu user Reddit es otro
 )
 
-subs = ["dankmemes", "me_irl", "wholesomememes"]
-post = next(reddit.subreddit("+".join(subs)).top(time_filter="day", limit=1))
+subreddits = ["dankmemes", "me_irl", "wholesomememes"]
+post = next(reddit.subreddit("+".join(subreddits)).top(time_filter="day", limit=1))
 
 url   = post.url
-title = post.title[:2200]                         # máx. 2 200 caracteres
+title = post.title[:2200]                      # máximo permitido por IG
 
-# ───── 3) Descarga temporal del archivo ───────────────────────────────────
-with tempfile.TemporaryDirectory() as tmp:
-    fname = os.path.join(tmp, url.split("/")[-1].split("?")[0])
+# ───── 3. Descarga temporal del archivo ───────────────────────────────────
+with tempfile.TemporaryDirectory() as tmpdir:
+    fname = os.path.join(tmpdir, url.split("/")[-1].split("?")[0])
     r = requests.get(url, timeout=20)
     r.raise_for_status()
     open(fname, "wb").write(r.content)
 
-    # ───── 4) Login IG (con manejo de reto) ───────────────────────────────
+    # ───── 4. Login IG con sesión persistente ─────────────────────────────
     ig = Client()
-    try:
-        ig.login(IG_USER, IG_PASS)
 
-    except ChallengeRequired:
-        code = os.environ.get("IG_CHALLENGE_CODE")
-        if not code:
-            raise RuntimeError(
-                "Instagram pide verificación. Añade el secret IG_CHALLENGE_CODE "
-                "con el código de 6 dígitos y vuelve a lanzar el workflow."
-            )
+    session_json = os.environ.get("IG_SESSION")  # secret con el JSON de sesión
+    if session_json:
         try:
-            # envía el código (por email o SMS) - según lo que IG haya elegido
-            ig.challenge_resolve(code)
-        except ChallengeResolutionFailed:
-            raise RuntimeError("El código IG_CHALLENGE_CODE no funcionó. Revísalo.")
+            ig.load_settings(json.loads(session_json))
+        except json.JSONDecodeError:
+            # Si el JSON está mal formateado, continúa sin él
+            pass
 
-    # ───── 5) Publicación ────────────────────────────────────────────────
+    # Intenta iniciar sesión; si la sesión es válida, no habrá retos
+    ig.login(IG_USER, IG_PASS)
+
+    # ───── 5. Publicación ────────────────────────────────────────────────
     if fname.lower().endswith((".jpg", ".jpeg", ".png", ".gif")):
-        ig.photo_upload(path=fname, caption=title)
-    else:                                         # vídeo mp4 / mov / etc.
-        ig.video_upload(path=fname, caption=title)
+        ig.photo_upload(fname, caption=title)
+    else:                                       # vídeo mp4 / mov / etc.
+        ig.video_upload(fname, caption=title)
