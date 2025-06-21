@@ -1,4 +1,4 @@
-praw
+Praw
 instagrapi
 requests
 pillow
