@@ -1,12 +1,11 @@
 """
-Reel Riot MVP  –  login robusto
-1. Si hay sesión JSON en IG_SESSION la usa.
-2. Si Instagram pide challenge, resuelve con IG_CHALLENGE_CODE.
+Reel Riot MVP — login robusto con IG_SESSION y código 6 dígitos
+Versión sin MoviePy
 """
 
 import os, json, tempfile, requests, praw
 from instagrapi import Client
-from instagrapi.exceptions import ChallengeRequired, ChallengeResolutionFailed
+from instagrapi.exceptions import ChallengeRequired   # <- solo esta
 
 # ─── secrets ───────────────────────────────────────────────────────────────
 IG_USER   = os.environ["IG_USERNAME"]
@@ -26,12 +25,12 @@ url, title = post.url, post.title[:2200]
 # ─── descarga ──────────────────────────────────────────────────────────────
 with tempfile.TemporaryDirectory() as tmp:
     fname = os.path.join(tmp, url.split("/")[-1].split("?")[0])
-    requests.get(url, timeout=20).raise_for_status()
-    open(fname, "wb").write(requests.get(url, timeout=20).content)
+    r = requests.get(url, timeout=20); r.raise_for_status()
+    open(fname, "wb").write(r.content)
 
     ig = Client()
 
-    # a) intenta cargar sesión si existe
+    # a) carga sesión JSON si existe
     sess_json = os.environ.get("IG_SESSION")
     if sess_json:
         try:
@@ -39,21 +38,19 @@ with tempfile.TemporaryDirectory() as tmp:
         except json.JSONDecodeError:
             pass
 
-    # b) login normal (puede lanzar reto)
+    # b) login (puede disparar reto)
     try:
         ig.login(IG_USER, IG_PASS)
 
     except ChallengeRequired:
         code = os.environ.get("IG_CHALLENGE_CODE")
         if not code:
-            raise RuntimeError("Añade IG_CHALLENGE_CODE con el código de 6 dígitos.")
-        try:
-            ig.challenge_resolve_simple(code)
-        except ChallengeResolutionFailed:
-            raise RuntimeError("Código IG_CHALLENGE_CODE incorrecto o caducado.")
+            raise RuntimeError(
+                "Instagram pide verificación. Añade el secret IG_CHALLENGE_CODE "
+                "con el código de 6 dígitos y re-ejecuta el workflow."
+            )
+        # intenta resolver con el código
+        if not ig.challenge_resolve_simple(code):
+            raise RuntimeError("El código IG_CHALLENGE_CODE es incorrecto o caducó.")
 
     # ─── publicación ───────────────────────────────────────────────────────
-    if fname.lower().endswith((".jpg", ".jpeg", ".png", ".gif")):
-        ig.photo_upload(fname, caption=title)
-    else:
-        ig.video_upload(fname, caption=title)
