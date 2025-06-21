@@ -19,6 +19,10 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements.txt
+        
+      - name: Comprobar que MoviePy está
+        run: |
+          python -c "import pkg_resources, sys; print('MoviePy versión:', pkg_resources.get_distribution('moviepy').version)"
 
       - name: Run bot
         env:
