@@ -27,7 +27,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
-      # 4) Asegura MoviePy e imageio-ffmpeg (por si el paso 3 falló en caché)
+      # 4) Fuerza MoviePy e imageio-ffmpeg, por si el caché falló
       - name: Ensure MoviePy installed
         run: |
           python -m pip install --upgrade moviepy imageio_ffmpeg
@@ -38,11 +38,27 @@ jobs:
           yt-dlp --dump-json "https://www.tiktok.com/@tiktok/trending?lang=en" \
             | head -n 20 > tiktok.json
 
-      # 6) Asegura Pillow (PIL) — lo necesita instagrapi
+      # 6) Asegura Pillow — lo necesita instagrapi
       - name: Ensure Pillow installed
         run: python -m pip install --upgrade Pillow
 
-      # 7) Ejecuta el bot
+      # 7) DEBUG — listar paquetes y comprobar MoviePy
+      - name: Debug-Python env
+        run: |
+          python - <<'PY'
+          import importlib.util, pkg_resources
+          spec = importlib.util.find_spec("moviepy")
+          print("moviepy spec:", spec)
+          if spec:
+              import moviepy
+              print("moviepy.__file__:", moviepy.__file__)
+              print("moviepy version:", moviepy.__version__)
+          print("-- installed wheels --")
+          for d in sorted({d.key for d in pkg_resources.working_set}):
+              print(" •", d)
+          PY
+
+      # 8) Ejecuta el bot
       - name: Run bot
         env:
           IG_USERNAME:        ${{ secrets.IG_USERNAME }}
