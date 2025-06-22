@@ -22,23 +22,20 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
-      # DEBUG – verifica que moviepy 1.0.3 está realmente instalado
+      # debug opcional
       - name: Debug MoviePy presence
         run: |
           python - <<'PY'
           import importlib.util, pkg_resources
           print("moviepy spec:", importlib.util.find_spec("moviepy.editor"))
-          print("moviepy version:",
-                pkg_resources.get_distribution("moviepy").version)
+          print("moviepy version:", pkg_resources.get_distribution("moviepy").version)
+          print("Pillow version:",  pkg_resources.get_distribution("Pillow").version)
           PY
 
       - name: Scrape TikTok trending (top 20)
         run: |
           yt-dlp --dump-json "https://www.tiktok.com/@tiktok/trending?lang=en" \
-            | head -n 20 > tiktok.json || true   # si falla, seguimos con Reddit
-
-      - name: Ensure Pillow installed
-        run: python -m pip install --upgrade Pillow
+            | head -n 20 > tiktok.json || true
 
       - name: Run bot
         env:
