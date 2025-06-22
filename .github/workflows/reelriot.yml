@@ -27,10 +27,6 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
-      # 4) Instala dependencias de Node (lee tu package.json)
-      - name: Install Node deps
-        run: npm install
-
       # 5) Genera tiktok.json con los 20 vídeos virales del día
       - name: Scrape TikTok trending (top 20)
         run: npx tiktok-scraper trend -n 20 -t json > tiktok.json
