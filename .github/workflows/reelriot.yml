@@ -3,42 +3,46 @@ name: Post daily meme
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 16 * * *'
+    - cron: '0 16 * * *'    # 16:00 UTC todos los días
 
 jobs:
   post:
     runs-on: ubuntu-latest
+
     steps:
+      # 1 · Clona tu repo
       - uses: actions/checkout@v3
 
+      # 2 · Python 3.10
       - name: Set up Python 3.10
         uses: actions/setup-python@v4
         with: { python-version: '3.10' }
 
+      # 3 · Instala dependencias
       - name: Install Python deps
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
-      # descarga los 20 Shorts de la lista Trending (EE. UU.)
-      - name: Scrape YT Shorts trending (top 20)
-        run: |
-          yt-dlp --print-json \
-           'https://www.youtube.com/feed/trending?bp=6gQJRkVleHBsb3Jl' \
-           --flat-playlist --match-filter "duration<90" \
-           | head -n 20 > shorts.json
-
-      # debug versiones
+      # 4 · Debug versiones (opcional)
       - name: Debug libs
         run: |
           python - <<'PY'
-          import pkg_resources as pk; import importlib.util as iu
-          print("moviepy:", pk.get_distribution("moviepy").version)
-          print("Pillow :", pk.get_distribution("Pillow").version)
-          print("yt-dlp :", pk.get_distribution("yt-dlp").version)
-          print("shorts.json lines:", sum(1 for _ in open("shorts.json")))
+          import pkg_resources as pk
+          print("moviepy :", pk.get_distribution("moviepy").version)
+          print("Pillow  :", pk.get_distribution("Pillow").version)
+          print("yt-dlp  :", pk.get_distribution("yt-dlp").version)
           PY
 
+      # 5 · Scrape Shorts vía Piped (sin cookies)
+      - name: Scrape Shorts via Piped (top 20)
+        run: |
+          curl -s 'https://piped.video/api/trending?region=US&category=Shorts' \
+            | jq -r '.[] | select(.duration < 90) | .url' | head -n 20 \
+            > shorts_urls.txt
+          jq -Rn '[inputs | {"url": .}]' shorts_urls.txt > shorts.json
+
+      # 6 · Ejecuta el bot
       - name: Run bot
         env:
           IG_USERNAME:      ${{ secrets.IG_USERNAME }}
