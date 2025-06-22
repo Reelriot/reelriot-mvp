@@ -27,7 +27,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
-      # 4) Genera tiktok.json con los 20 clips virales del día
+      # 4) Genera tiktok.json con los 20 clips virales del día (yt-dlp, sin Node)
       - name: Scrape TikTok trending (top 20)
         run: |
           yt-dlp --dump-json "https://www.tiktok.com/@tiktok/trending?lang=en" \
