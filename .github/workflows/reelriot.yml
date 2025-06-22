@@ -34,14 +34,6 @@ jobs:
           print("yt-dlp  :", pk.get_distribution("yt-dlp").version)
           PY
 
-      # 5 · Scrape Shorts vía Piped (sin cookies)
-      - name: Scrape Shorts via Piped (top 20)
-        run: |
-          curl -s 'https://piped.video/api/trending?region=US&category=Shorts' \
-            | jq -r '.[] | select(.duration < 90) | .url' | head -n 20 \
-            > shorts_urls.txt
-          jq -Rn '[inputs | {"url": .}]' shorts_urls.txt > shorts.json
-
       # 6 · Ejecuta el bot
       - name: Run bot
         env:
