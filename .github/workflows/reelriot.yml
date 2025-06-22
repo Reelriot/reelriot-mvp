@@ -27,17 +27,22 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
-      # 4) Genera tiktok.json con los 20 clips virales del día (yt-dlp, sin Node)
+      # 4) Asegura MoviePy e imageio-ffmpeg (por si el paso 3 falló en caché)
+      - name: Ensure MoviePy installed
+        run: |
+          python -m pip install --upgrade moviepy imageio_ffmpeg
+
+      # 5) Genera tiktok.json con los 20 clips virales del día (yt-dlp, sin Node)
       - name: Scrape TikTok trending (top 20)
         run: |
           yt-dlp --dump-json "https://www.tiktok.com/@tiktok/trending?lang=en" \
             | head -n 20 > tiktok.json
 
-      # 5) Asegura Pillow (PIL) — lo necesita instagrapi
+      # 6) Asegura Pillow (PIL) — lo necesita instagrapi
       - name: Ensure Pillow installed
         run: python -m pip install --upgrade Pillow
 
-      # 6) Ejecuta el bot
+      # 7) Ejecuta el bot
       - name: Run bot
         env:
           IG_USERNAME:        ${{ secrets.IG_USERNAME }}
