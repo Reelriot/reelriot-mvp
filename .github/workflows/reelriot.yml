@@ -36,6 +36,8 @@ jobs:
         env:
           IG_USERNAME: ${{ secrets.IG_USERNAME }}
           IG_PASSWORD: ${{ secrets.IG_PASSWORD }}
+          IG_SESSION:  ${{ secrets.IG_SESSION }}      # ← añade esta línea
           REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
-          REDDIT_SECRET: ${{ secrets.REDDIT_SECRET }}
+          REDDIT_SECRET:    ${{ secrets.REDDIT_SECRET }}
         run: python main.py
+
