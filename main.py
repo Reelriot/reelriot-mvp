@@ -33,8 +33,6 @@ with tempfile.TemporaryDirectory() as tmp:
 
     ig.set_settings(json.loads(session_json))   # ← usa set_settings, no load_settings
 
-
-    ig.load_settings(json.loads(session_json))
     ig.login(IG_USER, IG_PASS)           # ya no dispara retos
 
     # 4· Publicar
