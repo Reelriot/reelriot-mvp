@@ -2,6 +2,6 @@ praw
 instagrapi
 requests
 Pillow
-moviepy          # recorte vertical y re-encode
-imageio_ffmpeg   # backend FFmpeg que moviepy usa
-yt-dlp           # descargas TikTok / Shorts
+moviepy==1.0.3      # versión con moviepy.editor intacto
+imageio_ffmpeg
+yt-dlp
