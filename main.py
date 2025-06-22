@@ -31,6 +31,9 @@ with tempfile.TemporaryDirectory() as tmp:
     if not session_json:
         raise RuntimeError("Falta el secret IG_SESSION con tu ig_session.json")
 
+    ig.set_settings(json.loads(session_json))   # ← usa set_settings, no load_settings
+
+
     ig.load_settings(json.loads(session_json))
     ig.login(IG_USER, IG_PASS)           # ya no dispara retos
 
