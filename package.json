@@ -1,6 +1,6 @@
 {
   "name": "reelriot-scrape",
   "dependencies": {
-    "tiktok-scraper": "^1.10.0"
+    "tiktok-scraper": "1.10.4"
   }
 }
