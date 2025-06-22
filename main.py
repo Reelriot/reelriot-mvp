@@ -1,42 +1,75 @@
 """
-Reel Riot MVP – sesión persistente (sin MoviePy)
+Reel Riot MVP – ahora con TikTok trending
 """
 
-import os, json, tempfile, requests, praw
+import os, json, tempfile, pathlib, subprocess, requests, praw
 from instagrapi import Client
+from moviepy.editor import VideoFileClip  # recorte vertical (opcional)
 
+# ─── secrets ───────────────────────────────────────────────────────────────
 IG_USER   = os.environ["IG_USERNAME"]
 IG_PASS   = os.environ["IG_PASSWORD"]
 REDDIT_ID = os.environ["REDDIT_CLIENT_ID"]
 REDDIT_SEC = os.environ["REDDIT_SECRET"]
+SESSION   = os.environ["IG_SESSION"]
 
-# 1· Reddit: top del día
-reddit = praw.Reddit(
-    client_id=REDDIT_ID,
-    client_secret=REDDIT_SEC,
-    user_agent="reelriot_mvp/0.1 by reelriottv"
-)
-post = next(reddit.subreddit("dankmemes+me_irl+wholesomememes").top(time_filter="day", limit=1))
-url, title = post.url, post.title[:2200]
+TMP = tempfile.mkdtemp()
 
-# 2· Descarga
-with tempfile.TemporaryDirectory() as tmp:
-    fname = os.path.join(tmp, url.split("/")[-1].split("?")[0])
-    requests.get(url, timeout=20).raise_for_status()
-    open(fname, "wb").write(requests.get(url, timeout=20).content)
+# ─── helper: recorte 9:16 si es horizontal ────────────────────────────────
+def verticalize(path_in):
+    clip = VideoFileClip(path_in)
+    w, h = clip.size
+    if h >= w:
+        return path_in  # ya es vertical
+    new_h = w * 16 // 9
+    clip = (clip.resize(height=new_h)
+                .crop(x_center=w//2, width=w,
+                      y1=(new_h-h)//2, y2=(new_h+h)//2))
+    out = path_in.replace(".mp4", "_9x16.mp4")
+    clip.write_videofile(out, audio_codec="aac", logger=None)
+    return out
 
-    # 3· Instagram con sesión guardada
-    ig = Client()
-    session_json = os.environ.get("IG_SESSION")
-    if not session_json:
-        raise RuntimeError("Falta el secret IG_SESSION con tu ig_session.json")
+# ─── 1.  TikTok trending JSON (si existe) ──────────────────────────────────
+def fetch_tiktok():
+    tt_json = pathlib.Path("tiktok.json")
+    if not tt_json.exists():
+        return None
+    data = [json.loads(line) for line in tt_json.read_text().splitlines()]
+    # ordena por like_count (digg_count) descendente
+    data.sort(key=lambda d: d.get("digg_count", 0), reverse=True)
+    if not data:
+        return None
+    url = data[0]["download_addr"] or data[0]["url"]
+    out = pathlib.Path(TMP, "tiktok.mp4")
+    subprocess.run(["yt-dlp", "-o", out, url], check=True)
+    return str(out)
 
-    ig.set_settings(json.loads(session_json))   # ← usa set_settings, no load_settings
+# ─── 2.  Reddit fallback (lo que ya tenías) ───────────────────────────────
+def fetch_reddit():
+    reddit = praw.Reddit(
+        client_id=REDDIT_ID,
+        client_secret=REDDIT_SEC,
+        user_agent="reelriot_mvp/0.2"
+    )
+    post = next(reddit.subreddit("dankmemes+me_irl+wholesomememes")
+                      .top(time_filter="day", limit=1))
+    r = requests.get(post.url, timeout=20); r.raise_for_status()
+    ext = post.url.split(".")[-1].split("?")[0]
+    fname = pathlib.Path(TMP, f"reddit.{ext}")
+    fname.write_bytes(r.content)
+    return str(fname)
 
-    ig.login(IG_USER, IG_PASS)           # ya no dispara retos
+# ─── 3.  Decide la fuente ─────────────────────────────────────────────────
+clip_path = fetch_tiktok() or fetch_reddit()
+clip_path = verticalize(clip_path)
 
-    # 4· Publicar
-    if fname.lower().endswith((".jpg", ".jpeg", ".png", ".gif")):
-        ig.photo_upload(fname, caption=title)
-    else:
-        ig.video_upload(fname, caption=title)
+# ─── 4.  Login IG y publicar ──────────────────────────────────────────────
+ig = Client()
+ig.set_settings(json.loads(SESSION))
+ig.login(IG_USER, IG_PASS)
+
+CAPTION = ("🤣 Daily chaos 🚀\n"
+           "➡️ Follow @reelriot.tv for more\n"
+           "#funny #viral #meme #reelriot #scrolllaughrepeat #riotmemes")
+
+ig.video_upload(clip_path, caption=CAPTION)
