@@ -1,7 +1,7 @@
 praw
 instagrapi
 requests
-Pillow
-moviepy==1.0.3      # versión con moviepy.editor intacto
+Pillow==9.5.0        # versión compatible con moviepy 1.x (ANTIALIAS)
+moviepy==1.0.3       # mantiene moviepy.editor
 imageio_ffmpeg
 yt-dlp
