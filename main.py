@@ -1,65 +1,71 @@
 """
-Reel Riot MVP – publica Reels diarios.
-Fuentes (en orden de prioridad):
-1. YouTube Shorts Trending (< 90 s)
-2. Reddit (vídeo MP4). Si solo hay imagen → genera loop de 3 s.
+Reel Riot MVP – publica un Reel al día.
 
-Requisitos de entorno (secrets):
-  IG_USERNAME, IG_PASSWORD, IG_SESSION,
-  REDDIT_CLIENT_ID, REDDIT_SECRET
+Prioridad de fuentes
+====================
+1. YouTube **Shorts Trending** (Top US, vía Piped API)  < 90 s.
+2. Subreddits de vídeo: videos, Unexpected, PublicFreakout, reels…
+   – si solo hay imagen, se crea un loop MP4 de 3 s.
+
+Secrets requeridos en GitHub Actions
+------------------------------------
+IG_USERNAME  IG_PASSWORD  IG_SESSION
+REDDIT_CLIENT_ID  REDDIT_SECRET
 """
 
-import os, json, tempfile, pathlib, subprocess, requests, praw
+import os, json, random, tempfile, pathlib, subprocess, requests, praw
 from instagrapi import Client
 from moviepy.editor import VideoFileClip, ImageClip
 
+# ─────────────── CONFIG ──────────────────────────────────────────────────
 IG_USER   = os.environ["IG_USERNAME"]
 IG_PASS   = os.environ["IG_PASSWORD"]
+IG_SESS   = os.environ["IG_SESSION"]
 REDDIT_ID = os.environ["REDDIT_CLIENT_ID"]
 REDDIT_SEC= os.environ["REDDIT_SECRET"]
-SESSION   = os.environ["IG_SESSION"]
 
 TMP = tempfile.mkdtemp()
 
-# ────────────────── utilidades ───────────────────────────────────────────
+# ─────────────── UTIL 9:16 ───────────────────────────────────────────────
 
 def verticalize(path_in: str) -> str:
-    """Garantiza que el vídeo sea 9:16; si ya lo es devuelve igual."""
+    """Si el vídeo es horizontal, recórtalo a 9:16 (centro)."""
     if not path_in.endswith(".mp4"):
         return path_in
     clip = VideoFileClip(path_in)
     w, h = clip.size
-    if h >= w:  # vertical u horizontal rotado
+    if h >= w:  # ya vertical
         return path_in
     new_h = w * 16 // 9
-    clip = (
-        clip.resize(height=new_h)
-            .crop(x_center=w // 2, width=w,
-                  y1=(new_h - h) // 2, y2=(new_h + h) // 2)
-    )
+    clip = (clip.resize(height=new_h)
+                .crop(x_center=w // 2, width=w,
+                      y1=(new_h - h) // 2, y2=(new_h + h) // 2))
     out = pathlib.Path(TMP, "vertical.mp4")
     clip.write_videofile(str(out), audio_codec="aac", logger=None)
     return str(out)
 
-# ────────────────── Shorts trending ──────────────────────────────────────
+# ─────────────── 1. YouTube Shorts via Piped ─────────────────────────────
 
 def fetch_shorts() -> str | None:
-    jj = pathlib.Path("shorts.json")
-    if not jj.exists():
+    """Descarga el primer Short trending US (< 90 s)."""
+    try:
+        resp = requests.get("https://piped.video/api/trending?region=US")
+        resp.raise_for_status()
+        videos = resp.json()
+    except Exception:
         return None
-    lines = [l for l in jj.read_text().splitlines() if l.strip()]
-    if not lines:
+    # filtra shorts (<90 s) y con campo "url"
+    shorts = [v for v in videos if v.get("duration", 10_000) < 90 and v.get("short", False)]
+    if not shorts:
         return None
-    data = json.loads(lines[0])            # primer vídeo trending
-    url = data.get("url")
-    if not url:
-        return None
-    out = pathlib.Path(TMP, "shorts.mp4")
-    if subprocess.run(["yt-dlp", "-o", str(out), url]).returncode != 0:
-        return None
-    return str(out)
+    vid = random.choice(shorts)  # algo de variedad
+    url = "https://www.youtube.com" + vid["url"]
+    out = pathlib.Path(TMP, "short.mp4")
+    if subprocess.run(["yt-dlp", "-o", str(out), url]).returncode == 0 and out.exists():
+        return str(out)
+    return None
 
-# ────────────────── Reddit fallback ──────────────────────────────────────
+# ─────────────── 2. Reddit vídeo o imagen ───────────────────────────────
 SUBS = (
     "videos+Unexpected+PublicFreakout+reels+Instagramreels+TikTokCringe+"
     "dankmemes+me_irl+wholesomememes"
@@ -69,43 +75,40 @@ def fetch_reddit() -> str | None:
     reddit = praw.Reddit(
         client_id=REDDIT_ID,
         client_secret=REDDIT_SEC,
-        user_agent="reelriot_mvp/0.6",
+        user_agent="reelriot_mvp/shorts",
     )
     for post in reddit.subreddit(SUBS).top(time_filter="day", limit=25):
-        url = post.url
-        if post.is_video:
-            url = post.media["reddit_video"]["fallback_url"]
-            ext = ".mp4"
-        else:
-            if not url.lower().endswith((".jpg", ".jpeg", ".png")):
-                continue
-            ext = "." + url.split(".")[-1].split("?")[0]
+        url = post.media["reddit_video"]["fallback_url"] if post.is_video else post.url
+        ext = ".mp4" if post.is_video else os.path.splitext(url.split("?")[0])[1]
+        if ext.lower() not in {".mp4", ".jpg", ".jpeg", ".png"}:
+            continue
         fname = pathlib.Path(TMP, f"reddit{ext}")
-        r = requests.get(url, timeout=30)
-        r.raise_for_status()
-        fname.write_bytes(r.content)
-        return str(fname)
+        try:
+            r = requests.get(url, timeout=30); r.raise_for_status()
+            fname.write_bytes(r.content)
+            return str(fname)
+        except Exception:
+            continue
     return None
 
-# ────────────────── Preparar recurso ─────────────────────────────────────
+# ─────────────── 3. Selecciona recurso ──────────────────────────────────
 resource = fetch_shorts() or fetch_reddit()
 if resource is None:
-    raise RuntimeError("No se encontró contenido en Shorts ni Reddit")
+    raise RuntimeError("Sin vídeos: Shorts y Reddit fallaron")
 
-# si imagen ➜ convertir a mp4 loop 3s vertical
+# Si es imagen → haz loop 3 s en MP4
+autoloop = False
 if resource.lower().endswith((".jpg", ".jpeg", ".png")):
     clip = ImageClip(resource).set_duration(3).resize(height=1920)
-    out = pathlib.Path(TMP, "image_loop.mp4")
+    out = pathlib.Path(TMP, "loop.mp4")
     clip.write_videofile(str(out), fps=24, audio=False, logger=None)
-    resource = str(out)
+    resource, autoloop = str(out), True
 
-# Asegura 9:16
+# recorte vertical si procede
 resource = verticalize(resource)
 
-# ────────────────── Publicar en Instagram ────────────────────────────────
-ig = Client()
-ig.set_settings(json.loads(SESSION))
-ig.login(IG_USER, IG_PASS)
+# ─────────────── 4. Login IG y subir ─────────────────────────────────────
+ig = Client(); ig.set_settings(json.loads(IG_SESS)); ig.login(IG_USER, IG_PASS)
 
 CAPTION = (
     "🤣 Daily chaos 🚀\n"
@@ -114,4 +117,4 @@ CAPTION = (
 )
 
 ig.video_upload(resource, caption=CAPTION)
-print("✅ Publicado:", resource)
+print("✅ Publicado:", pathlib.Path(resource).name, "(loop)" if autoloop else "")
