@@ -1,5 +1,7 @@
-Praw
+praw
 instagrapi
 requests
-pillow
-yt-dlp	
+Pillow
+moviepy          # recorte vertical
+imageio_ffmpeg   # backend de vídeo que moviepy necesita
+yt-dlp           # descargas desde TikTok y Shorts
