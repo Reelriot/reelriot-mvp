@@ -1,20 +1,20 @@
 """
-Reel Riot MVP – sube Reel si es vídeo, foto si es imagen
+Reel Riot – vídeo primero; si no hay, convierte imagen a Reel loop 3 s
 """
 
-import os, json, tempfile, pathlib, subprocess, requests, praw
+import os, json, tempfile, pathlib, subprocess, random, requests, praw
 from instagrapi import Client
-from moviepy.editor import VideoFileClip
+from moviepy.editor import VideoFileClip, ImageClip, concatenate_videoclips
 
-IG_USER   = os.environ["IG_USERNAME"]
-IG_PASS   = os.environ["IG_PASSWORD"]
+IG_USER = os.environ["IG_USERNAME"]
+IG_PASS = os.environ["IG_PASSWORD"]
 REDDIT_ID = os.environ["REDDIT_CLIENT_ID"]
 REDDIT_SEC= os.environ["REDDIT_SECRET"]
-SESSION   = os.environ["IG_SESSION"]
+SESSION  = os.environ["IG_SESSION"]
 
 TMP = tempfile.mkdtemp()
 
-# ─── recorte a 9:16 si es horizontal ──────────────────────────────────────
+# ─── helper verticalize ────────────────────────────────────────────────────
 def verticalize(path_in):
     if not path_in.endswith(".mp4"):
         return path_in
@@ -30,7 +30,7 @@ def verticalize(path_in):
     clip.write_videofile(out, audio_codec="aac", logger=None)
     return out
 
-# ─── 1.  TikTok (si existe tiktok.json) ───────────────────────────────────
+# ─── TikTok (opcional, puede fallar) ───────────────────────────────────────
 def fetch_tiktok():
     jj = pathlib.Path("tiktok.json")
     if not jj.exists():
@@ -38,42 +38,57 @@ def fetch_tiktok():
     data = [json.loads(l) for l in jj.read_text().splitlines() if l.strip()]
     if not data:
         return None
-    # yt-dlp flat playlist → entries con 'url'
     url = data[0]["url"]
     out = pathlib.Path(TMP, "tiktok.mp4")
-    subprocess.run(["yt-dlp", "-o", out, url], check=True)
+    try:
+        subprocess.run(["yt-dlp", "-o", out, url], check=True)
+    except subprocess.CalledProcessError:
+        return None
     return str(out)
 
-# ─── 2.  Reddit vídeo fallback ────────────────────────────────────────────
+# ─── Reddit vídeo o imagen fallback ────────────────────────────────────────
+SUBS = "videos+Unexpected+PublicFreakout+reels+Instagramreels+TikTokCringe+dankmemes+me_irl+wholesomememes"
+
 def fetch_reddit():
     reddit = praw.Reddit(client_id=REDDIT_ID,
                          client_secret=REDDIT_SEC,
-                         user_agent="reelriot_mvp/0.3")
-    for post in reddit.subreddit(
-        "dankmemes+me_irl+wholesomememes").top(time_filter="day", limit=10):
+                         user_agent="reelriot_mvp/0.4")
+    for post in reddit.subreddit(SUBS).top(time_filter="day", limit=20):
+        url = post.url
         if post.is_video:
             url = post.media["reddit_video"]["fallback_url"]
-            fname = pathlib.Path(TMP, "reddit.mp4")
-            r = requests.get(url, timeout=30); r.raise_for_status()
-            fname.write_bytes(r.content)
-            return str(fname)
+            ext = ".mp4"
+        else:
+            if not url.endswith((".jpg", ".jpeg", ".png")):
+                continue
+            ext = "." + url.split(".")[-1].split("?")[0]
+        fname = pathlib.Path(TMP, f"reddit{ext}")
+        r = requests.get(url, timeout=30); r.raise_for_status()
+        fname.write_bytes(r.content)
+        return str(fname)
     return None
 
-# ─── 3.  Decide fuente ────────────────────────────────────────────────────
-clip = fetch_tiktok() or fetch_reddit()
-if clip is None:
-    raise RuntimeError("No se encontró vídeo ni en TikTok ni en Reddit")
+# ─── 1. decide recurso ────────────────────────────────────────────────────
+resource = fetch_tiktok() or fetch_reddit()
+if resource is None:
+    raise RuntimeError("No se encontró contenido (TikTok y Reddit vacíos)")
 
-clip = verticalize(clip)
+# ─── 2. si es imagen, haz loop vídeo 3 s ───────────────────────────────────
+if resource.endswith((".jpg", ".jpeg", ".png")):
+    clip = ImageClip(resource).set_duration(3).resize(height=1920)
+    out = pathlib.Path(TMP, "image_loop.mp4")
+    clip.write_videofile(out, fps=24, audio=False, logger=None)
+    resource = str(out)
 
-# ─── 4.  Login IG y publicar ──────────────────────────────────────────────
+# ─── 3. recorte vertical si necesita ───────────────────────────────────────
+resource = verticalize(resource)
+
+# ─── 4. login IG y subir ───────────────────────────────────────────────────
 ig = Client(); ig.set_settings(json.loads(SESSION)); ig.login(IG_USER, IG_PASS)
 
 CAPTION = ("🤣 Daily chaos 🚀\n"
            "➡️ Follow @reelriot.tv for more\n"
            "#funny #viral #meme #reelriot #scrolllaughrepeat #riotmemes")
 
-if clip.endswith(".mp4"):
-    ig.video_upload(clip, caption=CAPTION)
-else:
-    ig.photo_upload(clip, caption=CAPTION)
+ig.video_upload(resource, caption=CAPTION)
+print("✅ Publicado:", resource)
