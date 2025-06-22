@@ -2,3 +2,4 @@ Praw
 instagrapi
 requests
 pillow
+yt-dlp	
